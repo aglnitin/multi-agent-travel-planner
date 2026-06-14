@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Multi-Agent Travel Planner — Code Walkthrough</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3350;
+    --lc: #3b82f6;      /* LangChain blue */
+    --lg: #a855f7;      /* LangGraph purple */
+    --api: #22c55e;     /* External API green */
+    --warn: #f59e0b;    /* State/data amber */
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --code-bg: #0d1117;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.7; }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(15,17,23,0.95); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 6px; padding: 10px 32px; flex-wrap: wrap;
+  }
+  nav a { color: var(--muted); text-decoration: none; font-size: 13px; padding: 4px 10px; border-radius: 6px; transition: all .15s; }
+  nav a:hover { background: var(--surface2); color: var(--text); }
+  nav .logo { font-weight: 700; color: var(--text); font-size: 15px; margin-right: 12px; }
+
+  /* ── LAYOUT ── */
+  .page { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 15px; font-weight: 600; margin: 20px 0 10px; }
+  p  { color: var(--muted); margin-bottom: 12px; font-size: 14px; }
+  .sub { color: var(--muted); font-size: 14px; }
+
+  /* ── BADGES ── */
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px; letter-spacing: .04em;
+  }
+  .badge-lc  { background: rgba(59,130,246,.18); color: #60a5fa; border: 1px solid rgba(59,130,246,.35); }
+  .badge-lg  { background: rgba(168,85,247,.18); color: #c084fc; border: 1px solid rgba(168,85,247,.35); }
+  .badge-api { background: rgba(34,197,94,.15);  color: #4ade80; border: 1px solid rgba(34,197,94,.35); }
+  .badge-state { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.35); }
+
+  /* ── LAYER DIAGRAM (LangChain vs LangGraph) ── */
+  .layer-stack { display: flex; flex-direction: column; gap: 0; margin: 20px 0 32px; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); }
+  .layer {
+    padding: 18px 24px; display: flex; align-items: flex-start; gap: 16px;
+  }
+  .layer-lg { background: rgba(168,85,247,.08); border-bottom: 1px solid var(--border); }
+  .layer-lc { background: rgba(59,130,246,.08); border-bottom: 1px solid var(--border); }
+  .layer-py { background: rgba(34,197,94,.06); }
+  .layer-icon { font-size: 26px; flex-shrink: 0; margin-top: 2px; }
+  .layer-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .layer-desc  { font-size: 13px; color: var(--muted); }
+  .layer-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .item { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: var(--surface2); color: var(--muted); font-family: monospace; }
+
+  /* ── CODE BLOCK ── */
+  .code-block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; margin: 12px 0; }
+  .code-header { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+  .code-dot { width:10px; height:10px; border-radius:50%; }
+  .code-body { padding: 16px 18px; font-family: 'SF Mono','Fira Code', monospace; font-size: 12.5px; line-height: 1.65; white-space: pre; color: #cdd9e5; }
+  .hl-purple { color: #c084fc; }
+  .hl-blue   { color: #60a5fa; }
+  .hl-green  { color: #4ade80; }
+  .hl-yellow { color: #fbbf24; }
+  .hl-orange { color: #fb923c; }
+  .hl-grey   { color: #6b7280; }
+  .hl-string { color: #a3e635; }
+
+  /* ── STEP TIMELINE ── */
+  .steps { position: relative; padding-left: 48px; }
+  .steps::before {
+    content: ''; position: absolute; left: 18px; top: 16px; bottom: 16px;
+    width: 2px; background: var(--border);
+  }
+  .step { position: relative; margin-bottom: 36px; }
+  .step-dot {
+    position: absolute; left: -37px; top: 4px;
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px; z-index: 1;
+  }
+  .dot-lg  { background: rgba(168,85,247,.25); border: 2px solid #a855f7; color: #c084fc; }
+  .dot-lc  { background: rgba(59,130,246,.25); border: 2px solid #3b82f6; color: #60a5fa; }
+  .dot-api { background: rgba(34,197,94,.2);  border: 2px solid #22c55e; color: #4ade80; }
+  .dot-ok  { background: rgba(245,158,11,.2); border: 2px solid #f59e0b; color: #fbbf24; }
+  .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .step-title  { font-weight: 600; font-size: 15px; }
+  .step-file   { font-size: 11px; color: var(--muted); font-family: monospace; }
+  .step-body   { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .step-explain { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+
+  /* ── STATE EVOLUTION TABLE ── */
+  .state-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 16px 0; }
+  .state-table th { text-align: left; padding: 8px 12px; background: var(--surface2); color: var(--muted); font-weight: 600; border-bottom: 2px solid var(--border); }
+  .state-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .state-table tr:last-child td { border-bottom: none; }
+  .val-null  { color: #6b7280; font-style: italic; }
+  .val-set   { color: #4ade80; font-family: monospace; }
+  .val-chg   { color: #fbbf24; font-family: monospace; }
+  .changed-row { background: rgba(245,158,11,.05); }
+
+  /* ── COMPARE TABLE (LangChain vs LangGraph) ── */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .compare-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .compare-card-hdr { padding: 12px 16px; font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .hdr-lc { background: rgba(59,130,246,.12); color: #60a5fa; border-bottom: 1px solid rgba(59,130,246,.2); }
+  .hdr-lg { background: rgba(168,85,247,.12); color: #c084fc; border-bottom: 1px solid rgba(168,85,247,.2); }
+  .compare-card ul { list-style: none; padding: 14px 16px; }
+  .compare-card li { font-size: 13px; color: var(--muted); padding: 4px 0; padding-left: 14px; position: relative; }
+  .compare-card li::before { content: '→'; position: absolute; left: 0; color: var(--muted); }
+
+  /* ── CALLOUT ── */
+  .callout { border-radius: 10px; padding: 14px 18px; margin: 16px 0; font-size: 13px; }
+  .callout-blue   { background: rgba(59,130,246,.08);  border: 1px solid rgba(59,130,246,.25); }
+  .callout-purple { background: rgba(168,85,247,.08);  border: 1px solid rgba(168,85,247,.25); }
+  .callout-green  { background: rgba(34,197,94,.08);   border: 1px solid rgba(34,197,94,.25); }
+  .callout-amber  { background: rgba(245,158,11,.08);  border: 1px solid rgba(245,158,11,.25); }
+  .callout strong { color: var(--text); }
+
+  /* ── PARALLEL BOX ── */
+  .parallel-container { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 12px 0; }
+  .parallel-agent { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .parallel-agent-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+  .parallel-agent-detail { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .pa-flights { border-top: 2px solid #3b82f6; }
+  .pa-hotels  { border-top: 2px solid #a855f7; }
+  .pa-acts    { border-top: 2px solid #22c55e; }
+
+  /* ── FLOW ARROWS (between parallel) ── */
+  .arrow-down { text-align: center; color: var(--border); font-size: 20px; margin: 4px 0; }
+
+  @media (max-width: 640px) {
+    .compare { grid-template-columns: 1fr; }
+    .parallel-container { grid-template-columns: 1fr; }
+    .steps { padding-left: 36px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">✈️ Travel Agent Walkthrough</span>
+  <a href="#why-both">LangChain vs LangGraph</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#trace">Step-by-Step Trace</a>
+  <a href="#state">State Evolution</a>
+  <a href="#react">ReAct Loop</a>
+</nav>
+
+<div class="page">
+
+  <h1>Multi-Agent Travel Planner</h1>
+  <p class="sub">A full walkthrough using the example: <strong style="color:#e2e8f0">"Fly from Delhi to Bangkok, July 10–17 2026, 2 adults, mid-range"</strong></p>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <h2 id="why-both">❓ Why are LangChain AND LangGraph used together?</h2>
+
+  <p>This is the most common source of confusion. Here is the one-sentence answer:</p>
+
+  <div class="callout callout-purple">
+    <strong>LangGraph is the workflow engine. LangChain is the toolbox it uses inside each step.</strong>
+    They are not alternatives — LangGraph is built on top of LangChain.
+  </div>
+
+  <p>Think of it this way:</p>
+
+  <div class="layer-stack">
+    <div class="layer layer-lg">
+      <div class="layer-icon">🔮</div>
+      <div>
+        <div class="layer-title" style="color:#c084fc">LangGraph — <em>The Workflow Engine</em></div>
+        <div class="layer-desc">Orchestrates WHEN each piece runs. Defines nodes (steps), edges (transitions), conditional routing, checkpointing, and memory across turns.</div>
+        <div class="layer-items">
+          <span class="item">StateGraph</span>
+          <span class="item">add_node / add_edge</span>
+          <span class="item">add_conditional_edges</span>
+          <span class="item">MemorySaver</span>
+          <span class="item">START / END</span>
+        </div>
+      </div>
+    </div>
+    <div class="layer layer-lc">
+      <div class="layer-icon">🔷</div>
+      <div>
+        <div class="layer-title" style="color:#60a5fa">LangChain — <em>The AI Toolkit</em></div>
+        <div class="layer-desc">Provides the individual AI building blocks: LLM wrappers, tool decorators, prompt templates, structured output, and the ReAct agent loop.</div>
+        <div class="layer-items">
+          <span class="item">ChatOpenAI</span>
+          <span class="item">@tool</span>
+          <span class="item">with_structured_output()</span>
+          <span class="item">create_react_agent</span>
+          <span class="item">SystemMessage / HumanMessage</span>
+        </div>
+      </div>
+    </div>
+    <div class="layer layer-py">
+      <div class="layer-icon">🐍</div>
+      <div>
+        <div class="layer-title" style="color:#4ade80">Python — <em>Glue + External APIs</em></div>
+        <div class="layer-desc">asyncio.gather for parallel execution. requests for SerpAPI / Tavily HTTP calls. Telegram bot handler. Pydantic for schema validation.</div>
+        <div class="layer-items">
+          <span class="item">asyncio.gather</span>
+          <span class="item">requests.get</span>
+          <span class="item">pydantic BaseModel</span>
+          <span class="item">python-telegram-bot</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="compare-card">
+      <div class="compare-card-hdr hdr-lc">🔷 LangChain — "what can it do?"</div>
+      <ul>
+        <li>Call OpenAI / Anthropic / any LLM</li>
+        <li>Decorate a Python function as an LLM tool</li>
+        <li>Force the LLM to return a Pydantic schema</li>
+        <li>Run a single ReAct agent loop (Reason → Act → Observe)</li>
+        <li>Format system + human messages</li>
+      </ul>
+    </div>
+    <div class="compare-card">
+      <div class="compare-card-hdr hdr-lg">🔮 LangGraph — "in what order?"</div>
+      <ul>
+        <li>Define a graph of steps (nodes)</li>
+        <li>Route between steps conditionally</li>
+        <li>Pass typed state between steps</li>
+        <li>Remember conversations across turns (MemorySaver)</li>
+        <li>Checkpoint so a crash can be resumed</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout callout-amber">
+    <strong>Analogy:</strong> LangChain is like React hooks (useState, useFetch, useQuery) — individual capabilities. LangGraph is like Next.js — the routing and page lifecycle that decides <em>when</em> each hook runs and in what order.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <h2 id="architecture">🗺 Architecture Map</h2>
+  <p>The 5 nodes in the LangGraph <code>StateGraph</code>, and what runs inside each:</p>
+
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin:16px 0;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:0;">
+
+      <!-- START -->
+      <div style="background:#1a1d27;border:1px solid #2e3350;border-radius:8px;padding:8px 20px;font-size:12px;color:#6b7280;">START (user sends message)</div>
+      <div class="arrow-down">↓</div>
+
+      <!-- COORDINATOR -->
+      <div style="background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.4);border-radius:10px;padding:14px 24px;text-align:center;min-width:260px;">
+        <div style="font-weight:700;color:#60a5fa;margin-bottom:4px;">① coordinator_node</div>
+        <div style="font-size:11px;color:#94a3b8;">src/agents/coordinator.py</div>
+        <div style="margin-top:6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
+          <span class="badge badge-lc">ChatOpenAI</span>
+          <span class="badge badge-lc">with_structured_output</span>
+          <span class="badge badge-state">Pydantic Schema</span>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Parses raw text → TripRequest JSON</div>
+      </div>
+      <div class="arrow-down">↓</div>
+
+      <!-- ROUTER -->
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 20px;text-align:center;font-size:12px;">
+        <div style="font-weight:600;margin-bottom:4px;">route_after_coordinator()</div>
+        <div style="display:flex;gap:16px;justify-content:center;font-size:11px;color:#94a3b8;margin-top:6px;">
+          <span>error=True ──▶ error_end ──▶ END</span>
+          <span>|</span>
+          <span>error=False ──▶ orchestrate</span>
+        </div>
+      </div>
+      <div class="arrow-down">↓ (no error)</div>
+
+      <!-- ORCHESTRATE -->
+      <div style="background:rgba(168,85,247,.1);border:1px solid rgba(168,85,247,.4);border-radius:10px;padding:14px 24px;text-align:center;min-width:300px;">
+        <div style="font-weight:700;color:#c084fc;margin-bottom:4px;">② orchestrate_node</div>
+        <div style="font-size:11px;color:#94a3b8;">src/agents/orchestrator.py</div>
+        <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+          <div style="background:rgba(59,130,246,.12);border-radius:6px;padding:6px;font-size:10px;color:#60a5fa;text-align:center;">
+            Flights Agent<br/><span style="color:#6b7280">create_react_agent</span>
+          </div>
+          <div style="background:rgba(168,85,247,.12);border-radius:6px;padding:6px;font-size:10px;color:#c084fc;text-align:center;">
+            Hotels Agent<br/><span style="color:#6b7280">create_react_agent</span>
+          </div>
+          <div style="background:rgba(34,197,94,.12);border-radius:6px;padding:6px;font-size:10px;color:#4ade80;text-align:center;">
+            Activities Agent<br/><span style="color:#6b7280">create_react_agent</span>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:8px;">asyncio.gather → runs all 3 in PARALLEL</div>
+        <div style="margin-top:6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
+          <span class="badge badge-api">SerpAPI Flights</span>
+          <span class="badge badge-api">SerpAPI Hotels</span>
+          <span class="badge badge-api">SerpAPI Local</span>
+          <span class="badge badge-api">Tavily Search</span>
+        </div>
+      </div>
+      <div class="arrow-down">↓</div>
+
+      <!-- VALIDATE -->
+      <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:14px 24px;text-align:center;min-width:260px;">
+        <div style="font-weight:700;color:#fbbf24;margin-bottom:4px;">③ validate_node</div>
+        <div style="font-size:11px;color:#94a3b8;">src/agents/validator.py</div>
+        <div style="margin-top:6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
+          <span class="badge badge-lc">ChatOpenAI</span>
+          <span class="badge badge-state">System Prompt</span>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Curates top picks → Formats final itinerary</div>
+      </div>
+      <div class="arrow-down">↓</div>
+
+      <!-- END -->
+      <div style="background:#1a1d27;border:1px solid #2e3350;border-radius:8px;padding:8px 20px;font-size:12px;color:#6b7280;">END — final_output sent to Telegram / CLI</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <h2 id="trace">🔍 Step-by-Step Trace</h2>
+  <p>Following the message <em>"I want to fly from Delhi to Bangkok on July 10 2026 and return July 17 2026, 2 adults, mid-range budget"</em> through every line of code.</p>
+
+  <div class="steps">
+
+    <!-- STEP 0 -->
+    <div class="step">
+      <div class="step-dot dot-api">0</div>
+      <div class="step-header">
+        <span class="step-title">User sends message → Telegram Bot receives it</span>
+        <span class="step-file">src/bot.py → handle_message()</span>
+        <span class="badge badge-api">python-telegram-bot</span>
+      </div>
+      <div class="step-body">
+        <p class="step-explain">The Telegram bot gets a webhook/polling event. It extracts the text and chat ID, then hands off to LangGraph.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><div class="code-dot" style="background:#febc2e"></div><div class="code-dot" style="background:#28c840"></div><span>src/bot.py</span></div>
+          <div class="code-body"><span class="hl-blue">async def</span> <span class="hl-yellow">handle_message</span>(update, context):
+    chat_id  = update.message.chat_id          <span class="hl-grey"># e.g. 123456789</span>
+    user_text = update.message.text            <span class="hl-grey"># "I want to fly from Delhi..."</span>
+
+    initial_state = {
+        <span class="hl-string">"messages"</span>:          [],
+        <span class="hl-string">"session_id"</span>:        <span class="hl-orange">str</span>(chat_id),       <span class="hl-grey"># "123456789"</span>
+        <span class="hl-string">"user_input"</span>:        user_text,
+        <span class="hl-string">"trip_request"</span>:      <span class="hl-blue">None</span>,              <span class="hl-grey"># filled by coordinator</span>
+        <span class="hl-string">"orchestrator_output"</span>: <span class="hl-blue">None</span>,           <span class="hl-grey"># filled by orchestrator</span>
+        <span class="hl-string">"final_output"</span>:      <span class="hl-blue">None</span>,              <span class="hl-grey"># filled by validator</span>
+    }
+    config = {<span class="hl-string">"configurable"</span>: {<span class="hl-string">"thread_id"</span>: <span class="hl-orange">str</span>(chat_id)}}
+                                               <span class="hl-grey"># thread_id = chat_id → per-user memory</span>
+
+    result = <span class="hl-blue">await</span> travel_graph.<span class="hl-yellow">ainvoke</span>(initial_state, config=config)
+    <span class="hl-blue">await</span> update.message.<span class="hl-yellow">reply_text</span>(result[<span class="hl-string">"final_output"</span>])</div>
+        </div>
+        <div class="callout callout-purple">
+          <strong>LangGraph role here:</strong> <code>travel_graph.ainvoke()</code> is the LangGraph graph compiled in <code>src/graph.py</code>. It accepts the state dict and runs it through all nodes automatically. You don't manually call coordinator → orchestrator → validator; LangGraph does that routing.
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 1 -->
+    <div class="step">
+      <div class="step-dot dot-lc">1</div>
+      <div class="step-header">
+        <span class="step-title">coordinator_node — Parse the user message</span>
+        <span class="step-file">src/agents/coordinator.py</span>
+        <span class="badge badge-lc">LangChain</span>
+      </div>
+      <div class="step-body">
+        <p class="step-explain">The coordinator calls OpenAI and forces it to return a Pydantic-validated JSON object — no freeform text. This is <strong>LangChain's structured output</strong> feature.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><div class="code-dot" style="background:#febc2e"></div><div class="code-dot" style="background:#28c840"></div><span>src/agents/coordinator.py</span></div>
+          <div class="code-body"><span class="hl-blue">async def</span> <span class="hl-yellow">coordinator_node</span>(state: TravelState) -> dict:
+
+    <span class="hl-grey"># 1. Create the LLM (this is LangChain)</span>
+    llm = <span class="hl-purple">ChatOpenAI</span>(model=<span class="hl-string">"gpt-4o-mini"</span>, temperature=<span class="hl-orange">0</span>)
+
+    <span class="hl-grey"># 2. Attach a Pydantic schema — LLM MUST return JSON matching this</span>
+    structured_llm = llm.<span class="hl-yellow">with_structured_output</span>(<span class="hl-purple">TripRequestSchema</span>, method=<span class="hl-string">"json_mode"</span>)
+
+    <span class="hl-grey"># 3. Build the messages array (LangChain message types)</span>
+    messages = [
+        <span class="hl-purple">SystemMessage</span>(content=<span class="hl-string">"You are the Trip Request Coordinator..."</span>),
+        <span class="hl-purple">HumanMessage</span>(content=state[<span class="hl-string">"user_input"</span>]),  <span class="hl-grey"># "I want to fly from Delhi..."</span>
+    ]
+
+    <span class="hl-grey"># 4. Call OpenAI → get back a typed Python object, not raw text</span>
+    result: TripRequestSchema = <span class="hl-blue">await</span> structured_llm.<span class="hl-yellow">ainvoke</span>(messages)
+
+    <span class="hl-grey"># 5. Return updates to LangGraph state (LangGraph merges this into state)</span>
+    <span class="hl-blue">return</span> {<span class="hl-string">"trip_request"</span>: result.<span class="hl-yellow">model_dump</span>()}</div>
+        </div>
+
+        <h3>What the LLM produces (structured output):</h3>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><span>TripRequestSchema (Pydantic model output)</span></div>
+          <div class="code-body">{
+  <span class="hl-yellow">"origin"</span>:             <span class="hl-string">"Delhi"</span>,
+  <span class="hl-yellow">"destination"</span>:        <span class="hl-string">"Bangkok"</span>,
+  <span class="hl-yellow">"departure_date"</span>:     <span class="hl-string">"2026-07-10"</span>,
+  <span class="hl-yellow">"return_date"</span>:        <span class="hl-string">"2026-07-17"</span>,
+  <span class="hl-yellow">"number_of_travelers"</span>: <span class="hl-orange">2</span>,
+  <span class="hl-yellow">"travel_style"</span>:       <span class="hl-string">"mid-range"</span>,
+  <span class="hl-yellow">"error"</span>:              <span class="hl-green">false</span>,     <span class="hl-grey">← "false" means all fields present</span>
+  <span class="hl-yellow">"error_msg"</span>:          <span class="hl-string">""</span>
+}</div>
+        </div>
+        <div class="callout callout-blue">
+          <strong>Why structured output?</strong> Without it, the LLM might say "Sure! Here are the details..." — free text you'd need to regex-parse. <code>with_structured_output(TripRequestSchema)</code> instructs OpenAI to use its function-calling API internally and return only the JSON object. Pydantic validates it. If the LLM returns garbage, Pydantic raises an error before bad data propagates.
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step">
+      <div class="step-dot dot-lg">2</div>
+      <div class="step-header">
+        <span class="step-title">LangGraph routes: error? → END or orchestrate</span>
+        <span class="step-file">src/graph.py + src/agents/coordinator.py</span>
+        <span class="badge badge-lg">LangGraph</span>
+      </div>
+      <div class="step-body">
+        <p class="step-explain">This is <strong>pure LangGraph</strong> — no LLM involved. A Python function reads the state and returns a string key that tells LangGraph which node to run next.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><span>src/agents/coordinator.py — routing function</span></div>
+          <div class="code-body"><span class="hl-blue">def</span> <span class="hl-yellow">route_after_coordinator</span>(state: TravelState) -> str:
+    trip = state.<span class="hl-yellow">get</span>(<span class="hl-string">"trip_request"</span>) <span class="hl-blue">or</span> {}
+    <span class="hl-blue">if</span> trip.<span class="hl-yellow">get</span>(<span class="hl-string">"error"</span>, <span class="hl-blue">True</span>):
+        <span class="hl-blue">return</span> <span class="hl-string">"error_end"</span>    <span class="hl-grey"># → error node → sends error_msg → END</span>
+    <span class="hl-blue">return</span> <span class="hl-string">"orchestrate"</span>         <span class="hl-grey"># → runs flights + hotels + activities</span></div>
+        </div>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><span>src/graph.py — where the routing is wired up</span></div>
+          <div class="code-body">graph.<span class="hl-yellow">add_conditional_edges</span>(
+    <span class="hl-string">"coordinator"</span>,              <span class="hl-grey"># from this node...</span>
+    route_after_coordinator,     <span class="hl-grey"># ...call this function to decide...</span>
+    {
+        <span class="hl-string">"error_end"</span>:  <span class="hl-string">"error_end"</span>,   <span class="hl-grey"># ...route to this node if "error_end"</span>
+        <span class="hl-string">"orchestrate"</span>: <span class="hl-string">"orchestrate"</span>, <span class="hl-grey"># ...route to this node if "orchestrate"</span>
+    },
+)</div>
+        </div>
+        <div class="callout callout-purple">
+          Our example has <code>error=false</code>, so LangGraph routes to <strong>orchestrate_node</strong>.
+          If the user had said "Hi" (a greeting), error=true → LangGraph skips the API calls entirely and sends the error_msg directly. This is the same as the <strong>n8n "If" node</strong>.
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="step">
+      <div class="step-dot dot-lc">3</div>
+      <div class="step-header">
+        <span class="step-title">orchestrate_node — 3 sub-agents run IN PARALLEL</span>
+        <span class="step-file">src/agents/orchestrator.py</span>
+        <span class="badge badge-lc">LangChain (ReAct agents)</span>
+        <span class="badge badge-api">SerpAPI + Tavily</span>
+      </div>
+      <div class="step-body">
+        <p class="step-explain">Three <strong>ReAct agents</strong> are created (LangChain) and run simultaneously with <code>asyncio.gather</code> (Python). Each agent reasons about what tool to call, calls it, reads the result, and returns formatted text.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><span>src/agents/orchestrator.py — parallel execution</span></div>
+          <div class="code-body"><span class="hl-blue">async def</span> <span class="hl-yellow">orchestrate_node</span>(state: TravelState) -> dict:
+    trip = state[<span class="hl-string">"trip_request"</span>]
+    trip_prompt = <span class="hl-yellow">json.dumps</span>(trip)   <span class="hl-grey"># pass the whole trip JSON to each agent</span>
+
+    <span class="hl-grey"># asyncio.gather → ALL THREE start at the same time (parallel!)</span>
+    flights_result, hotels_result, activities_result = <span class="hl-blue">await</span> asyncio.<span class="hl-yellow">gather</span>(
+        <span class="hl-yellow">_run_agent</span>(<span class="hl-string">"gpt-4o-mini"</span>, FLIGHTS_SYSTEM,    [search_flights],                    trip_prompt),
+        <span class="hl-yellow">_run_agent</span>(<span class="hl-string">"gpt-4o-mini"</span>, HOTELS_SYSTEM,     [search_hotels],                     trip_prompt),
+        <span class="hl-yellow">_run_agent</span>(<span class="hl-string">"gpt-4o-mini"</span>, ACTIVITIES_SYSTEM, [search_local_sightseeing, search_tavily], trip_prompt),
+        return_exceptions=<span class="hl-blue">True</span>   <span class="hl-grey"># if one fails, others still complete</span>
+    )
+
+<span class="hl-blue">async def</span> <span class="hl-yellow">_run_agent</span>(model, system_prompt, tools, trip_prompt) -> str:
+    llm   = <span class="hl-purple">ChatOpenAI</span>(model=model, temperature=<span class="hl-orange">0</span>)
+    agent = <span class="hl-purple">create_react_agent</span>(model=llm, tools=tools, prompt=system_prompt)
+    result = <span class="hl-blue">await</span> agent.<span class="hl-yellow">ainvoke</span>({<span class="hl-string">"messages"</span>: [<span class="hl-purple">HumanMessage</span>(content=trip_prompt)]})
+    <span class="hl-blue">return</span> result[<span class="hl-string">"messages"</span>][-<span class="hl-orange">1</span>].content   <span class="hl-grey"># last message = agent's final answer</span></div>
+        </div>
+
+        <h3>What each sub-agent does (all 3 running at the same time):</h3>
+        <div class="parallel-container">
+          <div class="parallel-agent pa-flights">
+            <div class="parallel-agent-title" style="color:#60a5fa">✈️ Flights Agent</div>
+            <div class="parallel-agent-detail">
+              Tool: <code>search_flights</code><br/>
+              Calls: SerpAPI Google Flights<br/>
+              Params: DEL → BKK, 2026-07-10, 2026-07-17, adults=2<br/>
+              Returns: 6 flight options with prices in INR
+            </div>
+          </div>
+          <div class="parallel-agent pa-hotels">
+            <div class="parallel-agent-title" style="color:#c084fc">🏨 Hotels Agent</div>
+            <div class="parallel-agent-detail">
+              Tool: <code>search_hotels</code><br/>
+              Calls: SerpAPI Google Hotels<br/>
+              Params: Bangkok, check-in 07-10, check-out 07-17<br/>
+              Returns: 7 hotel options with prices in INR
+            </div>
+          </div>
+          <div class="parallel-agent pa-acts">
+            <div class="parallel-agent-title" style="color:#4ade80">🗺 Activities Agent</div>
+            <div class="parallel-agent-detail">
+              Tools: <code>search_local_sightseeing</code> + <code>search_tavily</code><br/>
+              Calls: SerpAPI Local AND Tavily web search<br/>
+              Returns: 10-12 activity options grouped by area
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-amber">
+          <strong>Timing benefit:</strong> Sequential would take ~15s (5s × 3). With <code>asyncio.gather</code>, all 3 API calls overlap → total ~5s. This is exactly what n8n's parallel "agentTool" nodes did.
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4: ReAct Loop -->
+    <div class="step">
+      <div class="step-dot dot-lc">4</div>
+      <div class="step-header">
+        <span class="step-title">Inside each sub-agent: the ReAct loop</span>
+        <span class="step-file">LangChain — create_react_agent</span>
+        <span class="badge badge-lc">ReAct Pattern</span>
+      </div>
+      <div class="step-body">
+        <p class="step-explain"><code>create_react_agent</code> implements <strong>Reason → Act → Observe → Repeat</strong>. The LLM doesn't just call a tool blindly — it first reasons about what to call, then reads the result and decides if it needs to call again or answer.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><span>Flights Agent — internal ReAct turns (what the LLM actually "thinks")</span></div>
+          <div class="code-body"><span class="hl-grey">Turn 1 — REASON (LLM thinks):</span>
+  <span class="hl-string">"I need to find flights from Delhi to Bangkok.
+   Delhi's airport code is DEL, Bangkok's is BKK.
+   Dates: 2026-07-10 outbound, 2026-07-17 return, 2 adults."</span>
+
+<span class="hl-grey">Turn 1 — ACT (LLM calls the tool):</span>
+  search_flights(
+    departure_id = <span class="hl-string">"DEL"</span>,
+    arrival_id   = <span class="hl-string">"BKK"</span>,
+    outbound_date= <span class="hl-string">"2026-07-10"</span>,
+    return_date  = <span class="hl-string">"2026-07-17"</span>,
+    adults       = <span class="hl-orange">2</span>
+  )
+
+<span class="hl-grey">Turn 1 — OBSERVE (tool returns to LLM):</span>
+  {<span class="hl-string">"flights"</span>: [{<span class="hl-string">"airline"</span>:<span class="hl-string">"IndiGo"</span>,<span class="hl-string">"price_INR"</span>:<span class="hl-orange">65704</span>,...}, ...]}
+
+<span class="hl-grey">Turn 2 — REASON + FINAL ANSWER (LLM formats the response):</span>
+  <span class="hl-string">"I have the data. Let me format the top options..."</span>
+  → <span class="hl-string">"1. IndiGo DEL→BKK, 15:45-21:45, Non-stop, ₹65,704..."</span></div>
+        </div>
+        <div class="callout callout-blue">
+          <strong>Why ReAct instead of just calling the tool directly?</strong> Because the agent needs to determine airport codes from city names (Delhi → DEL, Bangkok → BKK). The LLM uses its world knowledge to do this mapping before calling the tool. A plain function call couldn't do that without a hard-coded lookup table.
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 5: Tool -->
+    <div class="step">
+      <div class="step-dot dot-api">5</div>
+      <div class="step-header">
+        <span class="step-title">Inside the tool: HTTP request to SerpAPI</span>
+        <span class="step-file">src/tools/flights.py</span>
+        <span class="badge badge-api">SerpAPI</span>
+        <span class="badge badge-lc">@tool decorator</span>
+      </div>
+      <div class="step-body">
+        <p class="step-explain">The <code>@tool</code> decorator is a <strong>LangChain feature</strong> that turns a plain Python function into something the LLM can call. It reads the docstring + type hints to build the JSON schema that OpenAI uses for function calling.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><span>src/tools/flights.py</span></div>
+          <div class="code-body"><span class="hl-purple">@tool</span>   <span class="hl-grey">← LangChain decorator — registers this as an LLM-callable tool</span>
+<span class="hl-blue">def</span> <span class="hl-yellow">search_flights</span>(departure_id: str, arrival_id: str,
+                    outbound_date: str, return_date: str, adults: int = <span class="hl-orange">1</span>) -> str:
+    <span class="hl-string">"""Search round-trip flights via SerpAPI Google Flights."""</span>
+    <span class="hl-grey"># ↑ docstring becomes the tool description the LLM reads</span>
+    <span class="hl-grey"># ↑ type hints become the JSON schema the LLM uses to call it</span>
+
+    params = {
+        <span class="hl-string">"engine"</span>: <span class="hl-string">"google_flights"</span>,
+        <span class="hl-string">"departure_id"</span>: departure_id,   <span class="hl-grey"># "DEL"</span>
+        <span class="hl-string">"arrival_id"</span>:   arrival_id,     <span class="hl-grey"># "BKK"</span>
+        <span class="hl-string">"outbound_date"</span>: outbound_date, <span class="hl-grey"># "2026-07-10"</span>
+        <span class="hl-string">"return_date"</span>:  return_date,    <span class="hl-grey"># "2026-07-17"</span>
+        <span class="hl-string">"adults"</span>: adults, <span class="hl-string">"currency"</span>: <span class="hl-string">"INR"</span>,
+        <span class="hl-string">"api_key"</span>: SERPAPI_API_KEY,
+    }
+    response = requests.<span class="hl-yellow">get</span>(<span class="hl-string">"https://serpapi.com/search"</span>, params=params, timeout=<span class="hl-orange">30</span>)
+    data = response.<span class="hl-yellow">json</span>()
+
+    flights = []
+    <span class="hl-blue">for</span> group <span class="hl-blue">in</span> data.<span class="hl-yellow">get</span>(<span class="hl-string">"best_flights"</span>, []):
+        legs = group.<span class="hl-yellow">get</span>(<span class="hl-string">"flights"</span>, [])
+        flights.<span class="hl-yellow">append</span>({
+            <span class="hl-string">"airline"</span>: legs[<span class="hl-orange">0</span>].<span class="hl-yellow">get</span>(<span class="hl-string">"airline"</span>),
+            <span class="hl-string">"price_INR"</span>: group.<span class="hl-yellow">get</span>(<span class="hl-string">"price"</span>),
+            <span class="hl-string">"stops"</span>: <span class="hl-orange">len</span>(legs) - <span class="hl-orange">1</span>,
+        })
+    <span class="hl-blue">return</span> json.<span class="hl-yellow">dumps</span>({<span class="hl-string">"flights"</span>: flights[:<span class="hl-orange">6</span>]})</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 6: VALIDATOR -->
+    <div class="step">
+      <div class="step-dot dot-ok">6</div>
+      <div class="step-header">
+        <span class="step-title">validate_node — Curate and format the final itinerary</span>
+        <span class="step-file">src/agents/validator.py</span>
+        <span class="badge badge-lc">LangChain</span>
+        <span class="badge badge-lg">LangGraph node</span>
+      </div>
+      <div class="step-body">
+        <p class="step-explain">The Validator receives the raw combined output (~3,000 tokens) from all 3 agents and produces the final formatted itinerary. It's a simple LLM call — no tools, no ReAct loop — just a strong system prompt.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><span>src/agents/validator.py</span></div>
+          <div class="code-body"><span class="hl-blue">async def</span> <span class="hl-yellow">validate_node</span>(state: TravelState) -> dict:
+    llm = <span class="hl-purple">ChatOpenAI</span>(model=<span class="hl-string">"gpt-4o-mini"</span>, temperature=<span class="hl-orange">0.3</span>)
+
+    <span class="hl-grey"># Combine everything into one context</span>
+    context = <span class="hl-string">f"TRIP REQUEST:\n{state['trip_request']}\n\n"</span>
+              <span class="hl-string">f"RAW AGENT OUTPUTS:\n{state['orchestrator_output']}"</span>
+
+    messages = [
+        <span class="hl-purple">SystemMessage</span>(content=VALIDATOR_SYSTEM),  <span class="hl-grey"># "Select top 2-3 flights..."</span>
+        <span class="hl-purple">HumanMessage</span>(content=context),
+    ]
+
+    response = <span class="hl-blue">await</span> llm.<span class="hl-yellow">ainvoke</span>(messages)
+    <span class="hl-blue">return</span> {<span class="hl-string">"final_output"</span>: response.content}  <span class="hl-grey"># the formatted itinerary</span></div>
+        </div>
+
+        <h3>Output (what the user receives on Telegram):</h3>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><span>final_output sent to Telegram</span></div>
+          <div class="code-body"><span class="hl-yellow">───────────────────────────────────────</span>
+<span class="hl-green">✈️ TRIP OVERVIEW</span>
+  • Route: Delhi → Bangkok
+  • Dates: 2026-07-10 to 2026-07-17 (7 nights)
+  • Travelers: 2  •  Style: Mid-range
+
+<span class="hl-blue">✈️ FLIGHTS (Top Picks)</span>
+  1. IndiGo  DEL→BKK  15:45-21:45  Non-stop  ₹65,704
+  2. Air India         11:00-16:55  Non-stop  ₹71,173
+
+<span class="hl-purple">🏨 HOTELS (Top Picks)</span>
+  1. Prince Palace Bangkok  ★★★★  ₹2,909/night  ₹20,360 total
+  2. Away Bangkok Riverside ★★★★½ ₹4,032/night  ₹28,222 total
+
+<span class="hl-orange">🗓️ DAILY ITINERARY</span>
+  Day 1 — Jul 10: Arrival → Asiatique Waterfront (evening)
+  Day 2 — Jul 11: Grand Palace, Wat Phra Kaew, Wat Arun
+  Day 3 — Jul 12: Chatuchak Weekend Market, Siam Square
+  ...
+
+<span class="hl-green">💡 TIPS</span>
+  1. Carry Thai Baht cash for local markets.
+  2. Use BTS Skytrain to skip traffic.
+<span class="hl-yellow">───────────────────────────────────────</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 7: MEMORY -->
+    <div class="step">
+      <div class="step-dot dot-lg">7</div>
+      <div class="step-header">
+        <span class="step-title">MemorySaver — Conversation persists for follow-up messages</span>
+        <span class="step-file">src/graph.py</span>
+        <span class="badge badge-lg">LangGraph</span>
+      </div>
+      <div class="step-body">
+        <p class="step-explain">LangGraph's <code>MemorySaver</code> checkpoints the full state after every node. The next message from the same user picks up where it left off — this is how follow-ups work without re-explaining context.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dot" style="background:#ff5f57"></div><span>src/graph.py — memory wired into the graph</span></div>
+          <div class="code-body"><span class="hl-grey"># One line — that's it</span>
+memory = <span class="hl-purple">MemorySaver</span>()
+graph  = graph.<span class="hl-yellow">compile</span>(checkpointer=memory)
+
+<span class="hl-grey"># Every invocation with the same thread_id shares memory</span>
+config = {<span class="hl-string">"configurable"</span>: {<span class="hl-string">"thread_id"</span>: <span class="hl-string">"123456789"</span>}}
+
+<span class="hl-grey"># Turn 1: "I want to fly Delhi to Bangkok July 10-17"</span>
+<span class="hl-blue">await</span> graph.<span class="hl-yellow">ainvoke</span>(state1, config)   <span class="hl-grey"># → full itinerary</span>
+
+<span class="hl-grey"># Turn 2: "actually make it 3 people" ← coordinator sees previous context</span>
+<span class="hl-blue">await</span> graph.<span class="hl-yellow">ainvoke</span>(state2, config)   <span class="hl-grey"># → knows it's Delhi→Bangkok, updates travelers</span></div>
+        </div>
+        <div class="callout callout-purple">
+          <strong>n8n equivalent:</strong> This is exactly the <code>memoryBufferWindow</code> node keyed by <code>message.chat.id</code> that was connected to the CoOrdinator agent. In LangGraph, <code>MemorySaver + thread_id</code> replaces it with zero additional nodes.
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /steps -->
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <h2 id="state">📊 State Evolution — What Changes at Each Step</h2>
+  <p>The <code>TravelState</code> TypedDict is the backbone of the graph. Every node reads from it and returns a partial dict that LangGraph merges in.</p>
+
+  <table class="state-table">
+    <thead>
+      <tr>
+        <th>After Step</th>
+        <th>messages</th>
+        <th>user_input</th>
+        <th>trip_request.error</th>
+        <th>orchestrator_output</th>
+        <th>final_output</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Initial (bot.py)</td>
+        <td class="val-set">[]</td>
+        <td class="val-set">"I want to fly..."</td>
+        <td class="val-null">null</td>
+        <td class="val-null">null</td>
+        <td class="val-null">null</td>
+      </tr>
+      <tr class="changed-row">
+        <td>① coordinator_node</td>
+        <td class="val-set">[]</td>
+        <td class="val-set">"I want to fly..."</td>
+        <td class="val-chg">false ← set</td>
+        <td class="val-null">null</td>
+        <td class="val-null">null</td>
+      </tr>
+      <tr>
+        <td>② route (no change)</td>
+        <td colspan="5" style="color:#6b7280;font-style:italic;">No state change — purely decides which node runs next</td>
+      </tr>
+      <tr class="changed-row">
+        <td>③ orchestrate_node</td>
+        <td class="val-set">[]</td>
+        <td class="val-set">"I want to fly..."</td>
+        <td class="val-set">false</td>
+        <td class="val-chg">"=== FLIGHTS ===\n..." ← set</td>
+        <td class="val-null">null</td>
+      </tr>
+      <tr class="changed-row">
+        <td>④ validate_node</td>
+        <td class="val-set">[]</td>
+        <td class="val-set">"I want to fly..."</td>
+        <td class="val-set">false</td>
+        <td class="val-set">"=== FLIGHTS ===\n..."</td>
+        <td class="val-chg">"✈️ TRIP OVERVIEW..." ← set</td>
+      </tr>
+      <tr>
+        <td>END (bot.py reads)</td>
+        <td colspan="5" style="color:#4ade80;font-family:monospace;">result["final_output"] → sent to Telegram ✓</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <h2 id="react">⚙️ The ReAct Loop — Visualised</h2>
+  <p><code>create_react_agent</code> is a LangChain / LangGraph prebuilt agent that implements the ReAct pattern. Here's the Flights Agent's full internal loop:</p>
+
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:16px 0;">
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:0;">
+
+      <div style="background:var(--surface2);padding:12px 16px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);font-size:11px;color:#c084fc;font-weight:700;">REASON</div>
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted);">LLM reads system prompt + trip JSON. Thinks: "DEL → BKK, 2 adults, dates are 2026-07-10 to 2026-07-17."</div>
+
+      <div style="background:var(--surface2);padding:12px 16px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);font-size:11px;color:#60a5fa;font-weight:700;">ACT</div>
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted);font-family:monospace;">search_flights("DEL", "BKK", "2026-07-10", "2026-07-17", 2)</div>
+
+      <div style="background:var(--surface2);padding:12px 16px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);font-size:11px;color:#4ade80;font-weight:700;">OBSERVE</div>
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted);font-family:monospace;">{"flights": [{"airline":"IndiGo","price_INR":65704,...},...], "count":6}</div>
+
+      <div style="background:var(--surface2);padding:12px 16px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);font-size:11px;color:#fbbf24;font-weight:700;">REASON</div>
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted);">Has enough data. No need to call tool again. Ready to format final answer.</div>
+
+      <div style="background:var(--surface2);padding:12px 16px;border-right:1px solid var(--border);font-size:11px;color:#fb923c;font-weight:700;">ANSWER</div>
+      <div style="padding:12px 16px;font-size:12px;color:var(--muted);">"1. IndiGo DEL→BKK, 15:45–21:45, Non-stop, ₹65,704\n2. Air India..."</div>
+    </div>
+  </div>
+
+  <div class="callout callout-blue">
+    <strong>Key insight:</strong> The LLM decides when it has enough information. If SerpAPI returned zero results, it could call the tool again with different parameters — or explain that no flights were found. This "reason before acting" is what separates a ReAct agent from a plain function call.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <h2>🗂 File → Responsibility Map</h2>
+
+  <table class="state-table">
+    <thead>
+      <tr><th>File</th><th>Layer</th><th>Does What</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>src/graph.py</code></td><td><span class="badge badge-lg">LangGraph</span></td><td>Defines the StateGraph, all nodes, edges, conditional routing, and memory</td></tr>
+      <tr><td><code>src/state.py</code></td><td><span class="badge badge-lg">LangGraph</span></td><td>TypedDict schema for the state that flows through every node</td></tr>
+      <tr><td><code>src/agents/coordinator.py</code></td><td><span class="badge badge-lc">LangChain</span></td><td>ChatOpenAI + with_structured_output → parses user message into TripRequest</td></tr>
+      <tr><td><code>src/agents/orchestrator.py</code></td><td><span class="badge badge-lc">LangChain</span> + Python</td><td>create_react_agent × 3 + asyncio.gather → parallel sub-agent execution</td></tr>
+      <tr><td><code>src/agents/validator.py</code></td><td><span class="badge badge-lc">LangChain</span></td><td>ChatOpenAI with strong system prompt → curates and formats final itinerary</td></tr>
+      <tr><td><code>src/tools/flights.py</code></td><td><span class="badge badge-lc">LangChain</span> + <span class="badge badge-api">API</span></td><td>@tool wrapping SerpAPI Google Flights HTTP call</td></tr>
+      <tr><td><code>src/tools/hotels.py</code></td><td><span class="badge badge-lc">LangChain</span> + <span class="badge badge-api">API</span></td><td>@tool wrapping SerpAPI Google Hotels HTTP call</td></tr>
+      <tr><td><code>src/tools/activities.py</code></td><td><span class="badge badge-lc">LangChain</span> + <span class="badge badge-api">API</span></td><td>@tool × 2 — SerpAPI Local + Tavily web search</td></tr>
+      <tr><td><code>src/bot.py</code></td><td>Python</td><td>Telegram bot handler — entry point that feeds messages into the graph</td></tr>
+      <tr><td><code>main.py</code></td><td>Python</td><td>CLI or Telegram mode selector</td></tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top:48px;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-align:center;">
+    <div style="font-size:13px;color:var(--muted);">Generated from the n8n workflow <strong style="color:var(--text)">Multi-Agent Travel Chat V4</strong> + <strong style="color:var(--text)">Travel Agent (Orchestrator)</strong></div>
+    <div style="font-size:11px;color:#6b7280;margin-top:6px;">Stack: LangGraph 0.2 · LangChain 0.3 · OpenAI gpt-4o-mini · SerpAPI · Tavily · python-telegram-bot 21</div>
+  </div>
+
+</div><!-- /page -->
+</body>
+</html>
