@@ -1,8 +1,7 @@
 """
-Telegram bot integration — mirrors the n8n Telegram Trigger + Send nodes.
+Telegram bot integration.
 
-Each Telegram chat gets its own LangGraph thread (session_id = chat_id),
-which maps to n8n's Simple Memory keyed by message.chat.id.
+Each Telegram chat gets its own LangGraph thread (session_id = chat_id)
 """
 import asyncio
 import logging
