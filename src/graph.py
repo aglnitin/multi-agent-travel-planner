@@ -13,7 +13,7 @@ async def error_end_node(state: TravelState) -> dict:
 
 def build_graph():
     """
-    Constructs the LangGraph StateGraph that mirrors the n8n workflow:
+    Constructs the LangGraph StateGraph:
 
     START
       └─► coordinator        (parse user input → TripRequest)
