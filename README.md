@@ -1,6 +1,6 @@
 # Multi-Agent Travel Planner
 
-A production-grade multi-agent travel planning bot built with **LangGraph + LangChain**, ported from an n8n visual workflow. Send a natural-language travel request via Telegram (or CLI) and get back a curated itinerary with real flights, hotels, and activities.
+A production-grade multi-agent travel planning bot built with **LangGraph + LangChain** Send a natural-language travel request via Telegram (or CLI) and get back a curated itinerary with real flights, hotels, and activities.
 
 ## Demo
 
@@ -151,20 +151,6 @@ They are not alternatives — LangGraph orchestrates *when* each LangChain compo
 2. **Orchestrator** — Spins up 3 ReAct agents in parallel. Each agent reasons about airport codes / hotel classes, calls the relevant SerpAPI endpoint, and returns formatted results.
 3. **Validator** — Receives all raw data, selects top 2-3 flights and hotels, distributes activities across days, and returns the final formatted itinerary.
 
-## n8n → Python Mapping
-
-| n8n Node | Python equivalent |
-|----------|------------------|
-| `CoOrdinator` agent | `coordinator_node` + `TripRequestSchema` (Pydantic) |
-| `If` (error routing) | `add_conditional_edges` + `route_after_coordinator` |
-| `Planner` agent | Removed — logic absorbed into `orchestrate_node` |
-| `Travel Agent (Orchestrator)` | `orchestrate_node` with `asyncio.gather` |
-| `Flights AI Agent` (agentTool) | `_run_agent(... [search_flights])` |
-| `Hotels AI Agent` (agentTool) | `_run_agent(... [search_hotels])` |
-| `Activities AI Agent` (agentTool) | `_run_agent(... [search_local, search_tavily])` |
-| `Validator and Summarizer` | `validate_node` |
-| `memoryBufferWindow` | `MemorySaver(thread_id=chat_id)` |
-| `Telegram Trigger` + Send nodes | `src/bot.py` |
 
 ## Resources
 
