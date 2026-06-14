@@ -7,24 +7,6 @@
 ### The Problem
 Build a travel planning assistant that accepts a natural-language request ("I want to fly from Delhi to Bangkok June 20–27 for 2 people, budget travel") and returns a curated, validated itinerary with real flights, hotels, and activities.
 
-### The Original System (n8n)
-The n8n workflow was a visual low-code pipeline with ~15 nodes across two sub-workflows:
-- **CoOrdinator** → validates and structures input
-- **Planner** → delegates to an Orchestrator sub-workflow
-- **Travel Agent (Orchestrator)** → runs 3 parallel sub-agents (Flights, Hotels, Activities)
-- **Validator and Summarizer** → cleans up and formats the output
-- **Telegram / Chat trigger + send** → interface
-
-### Why Port to Python with LangGraph?
-| Dimension | n8n (Low-Code) | LangGraph (Python) |
-|---|---|---|
-| Testability | Manual, visual | Full pytest coverage |
-| Version control | JSON export only | Git-native |
-| Debugging | Visual inspector | LangSmith, logs, breakpoints |
-| Custom logic | Limited expressions | Full Python |
-| Cost at scale | Per-execution pricing | Infrastructure cost only |
-| Team velocity | Non-engineers can edit | Engineers own it fully |
-
 ---
 
 ## 2. Framework Decision: LangGraph vs CrewAI vs RAG
