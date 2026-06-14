@@ -83,7 +83,6 @@ User Message (Telegram / CLI)
 │       └── activities.py     # SerpAPI Local + Tavily @tool
 ├── main.py                   # Entry point (--cli or Telegram mode)
 ├── walkthrough.html          # Visual code walkthrough (open in browser)
-├── INTERVIEW_GUIDE.md        # EM interview deep-dive
 ├── requirements.txt
 └── .env.example
 ```
