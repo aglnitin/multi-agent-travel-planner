@@ -1,4 +1,4 @@
-# Multi-Agent Travel Planner — Engineering Manager Interview Guide
+# Multi-Agent Travel Planner — DeepDive
 
 ---
 
@@ -326,7 +326,7 @@ Store golden-path inputs → expected output shape. Run after any system prompt 
 
 ---
 
-## 12. Common Engineering Manager Interview Questions
+## 12. Common Questions
 
 ### Q: "Why LangGraph over just using LangChain agents directly?"
 **A:** LangChain agents (e.g., `AgentExecutor`) are stateless and don't support conditional branching between agents. LangGraph gives us an explicit state machine where we can (a) route based on intermediate results (error vs. no error), (b) checkpoint state at each step for fault tolerance, and (c) compose multiple agents with typed data contracts between them. For production workflows with multiple failure modes and multi-turn conversations, that explicitness is critical.
